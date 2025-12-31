@@ -71,3 +71,11 @@ spec:
             port: 5000
           initialDelaySeconds: 10
           periodSeconds: 5
+        volumeMounts:
+        - name: main-py-volume
+          mountPath: /app/main.py
+          subPath: main.py
+      volumes:
+      - name: main-py-volume
+        configMap:
+          name: main-py-config
