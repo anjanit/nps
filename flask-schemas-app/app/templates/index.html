@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    <h1>NPS Scheme Data Visualization</h1>
+    
+    <div class="scheme-selector">
+        <label for="schemeSelect">Select Scheme:</label>
+        <select id="schemeSelect">
+            <option value="">-- Select a Scheme --</option>
+            {% for scheme in schemes %}
+            <option value="{{ scheme.scheme_code }}">{{ scheme.scheme_code }} - {{ scheme.scheme_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div id="chartContainer" style="display: none;">
+        <canvas id="schemaChart"></canvas>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    let chart = null;
+    const schemeSelect = document.getElementById('schemeSelect');
+    const chartContainer = document.getElementById('chartContainer');
+    
+    schemeSelect.addEventListener('change', async function() {
+        const schemeCode = this.value;
+        
+        if (!schemeCode) {
+            chartContainer.style.display = 'none';
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/scheme/${schemeCode}`);
+            const data = await response.json();
+            
+            if (chart) {
+                chart.destroy();
+            }
+            
+            chartContainer.style.display = 'block';
+            const ctx = document.getElementById('schemaChart').getContext('2d');
+            
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.dates,
+                    datasets: [{
+                        label: 'NAV',
+                        data: data.navs,
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 2,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: false
+                        }
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error fetching scheme data:', error);
+        }
+    });
+</script>
+{% endblock %}

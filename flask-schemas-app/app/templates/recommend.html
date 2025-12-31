@@ -1,0 +1,270 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    <h1>Investment Recommendations</h1>
+    <p>AI-powered analysis to identify best performing schemes based on historical data</p>
+    
+    <div class="scheme-selector">
+        <label for="topNInput">Number of Recommendations:</label>
+        <select id="topNInput">
+            <option value="5">Top 5</option>
+            <option value="10" selected>Top 10</option>
+            <option value="15">Top 15</option>
+            <option value="20">Top 20</option>
+        </select>
+        
+        <label for="daysBackInput" style="margin-top: 15px;">Analysis Period:</label>
+        <select id="daysBackInput">
+            <option value="90">Last 3 Months</option>
+            <option value="180">Last 6 Months</option>
+            <option value="365" selected>Last 1 Year</option>
+            <option value="730">Last 2 Years</option>
+        </select>
+        
+        <button id="analyzeBtn" class="btn-predict" style="margin-top: 15px;">Analyze Schemes</button>
+    </div>
+
+    <div id="loadingMsg" style="display: none; margin-top: 20px; text-align: center; color: #666;">
+        <p>Analyzing schemes... This may take a moment.</p>
+    </div>
+
+    <div id="recommendationsContainer" style="display: none; margin-top: 30px;">
+        <h2>Top Investment Opportunities</h2>
+        <div id="recommendationsTable"></div>
+    </div>
+
+    <div id="chartContainer" style="display: none; margin-top: 30px;">
+        <h3>Predicted Returns Comparison</h3>
+        <canvas id="recommendationsChart"></canvas>
+    </div>
+</div>
+
+<style>
+    .recommendations-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+        background: white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .recommendations-table th {
+        background: #4CAF50;
+        color: white;
+        padding: 12px;
+        text-align: left;
+        font-weight: 600;
+    }
+    
+    .recommendations-table td {
+        padding: 10px 12px;
+        border-bottom: 1px solid #ddd;
+    }
+    
+    .recommendations-table tr:hover {
+        background: #f5f5f5;
+    }
+    
+    .rank {
+        font-weight: bold;
+        color: #4CAF50;
+        font-size: 1.1em;
+    }
+    
+    .positive {
+        color: #4CAF50;
+        font-weight: 600;
+    }
+    
+    .negative {
+        color: #f44336;
+        font-weight: 600;
+    }
+    
+    .trend-up {
+        color: #4CAF50;
+    }
+    
+    .trend-down {
+        color: #f44336;
+    }
+    
+    .score-badge {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: 600;
+        display: inline-block;
+    }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    let recommendationsChart = null;
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const topNInput = document.getElementById('topNInput');
+    const daysBackInput = document.getElementById('daysBackInput');
+    const loadingMsg = document.getElementById('loadingMsg');
+    const recommendationsContainer = document.getElementById('recommendationsContainer');
+    const recommendationsTable = document.getElementById('recommendationsTable');
+    const chartContainer = document.getElementById('chartContainer');
+    
+    analyzeBtn.addEventListener('click', async function() {
+        const topN = topNInput.value;
+        const daysBack = daysBackInput.value;
+        
+        analyzeBtn.disabled = true;
+        analyzeBtn.textContent = 'Analyzing...';
+        loadingMsg.style.display = 'block';
+        recommendationsContainer.style.display = 'none';
+        chartContainer.style.display = 'none';
+        
+        try {
+            const response = await fetch(`/api/recommendations?top_n=${topN}&days_back=${daysBack}`);
+            const data = await response.json();
+            
+            if (data.error) {
+                alert('Error: ' + data.error);
+                return;
+            }
+            
+            displayRecommendations(data.recommendations);
+            createChart(data.recommendations);
+            
+            recommendationsContainer.style.display = 'block';
+            chartContainer.style.display = 'block';
+            
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Failed to fetch recommendations: ' + error.message);
+        } finally {
+            analyzeBtn.disabled = false;
+            analyzeBtn.textContent = 'Analyze Schemes';
+            loadingMsg.style.display = 'none';
+        }
+    });
+    
+    function displayRecommendations(recommendations) {
+        let tableHTML = `
+            <table class="recommendations-table">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Scheme Code</th>
+                        <th>Scheme Name</th>
+                        <th>Score</th>
+                        <th>Predicted Return (30 days)</th>
+                        <th>Recent Return (30 days)</th>
+                        <th>Current NAV</th>
+                        <th>Volatility</th>
+                        <th>Sharpe Ratio</th>
+                        <th>Trend</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+        
+        recommendations.forEach((rec, index) => {
+            const returnClass = rec.predicted_return >= 0 ? 'positive' : 'negative';
+            const trendClass = rec.trend === 'Upward' ? 'trend-up' : 'trend-down';
+            const trendIcon = rec.trend === 'Upward' ? '↑' : '↓';
+            
+            tableHTML += `
+                <tr>
+                    <td class="rank">#${index + 1}</td>
+                    <td><strong>${rec.scheme_code}</strong></td>
+                    <td>${rec.scheme_name}</td>
+                    <td><span class="score-badge">${rec.score.toFixed(2)}</span></td>
+                    <td class="${returnClass}">${rec.predicted_return.toFixed(2)}%</td>
+                    <td class="${rec.recent_return >= 0 ? 'positive' : 'negative'}">${rec.recent_return.toFixed(2)}%</td>
+                    <td>₹${rec.current_nav.toFixed(2)}</td>
+                    <td>${rec.volatility.toFixed(2)}%</td>
+                    <td>${rec.sharpe_ratio.toFixed(4)}</td>
+                    <td class="${trendClass}">${trendIcon} ${rec.trend}</td>
+                </tr>
+            `;
+        });
+        
+        tableHTML += `
+                </tbody>
+            </table>
+        `;
+        
+        recommendationsTable.innerHTML = tableHTML;
+    }
+    
+    function createChart(recommendations) {
+        const labels = recommendations.map(r => r.scheme_code);
+        const predictedReturns = recommendations.map(r => r.predicted_return);
+        const recentReturns = recommendations.map(r => r.recent_return);
+        
+        const ctx = document.getElementById('recommendationsChart').getContext('2d');
+        
+        if (recommendationsChart) {
+            recommendationsChart.destroy();
+        }
+        
+        recommendationsChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Predicted 30-Day Return (%)',
+                        data: predictedReturns,
+                        backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Recent 30-Day Return (%)',
+                        data: recentReturns,
+                        backgroundColor: 'rgba(255, 159, 64, 0.6)',
+                        borderColor: 'rgba(255, 159, 64, 1)',
+                        borderWidth: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Return (%)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Scheme Code'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': ' + context.parsed.y.toFixed(2) + '%';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Auto-load on page load
+    window.addEventListener('load', function() {
+        analyzeBtn.click();
+    });
+</script>
+{% endblock %}

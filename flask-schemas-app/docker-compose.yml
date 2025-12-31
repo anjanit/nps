@@ -1,0 +1,72 @@
+# Docker Compose configuration for NPS Flask Application
+#
+# This configuration sets up a multi-container application with the following services:
+#
+# Services:
+#   mysql:
+#     - MySQL 8.0 database server
+#     - Container name: nps_mysql
+#     - Root password: rootpassword
+#     - Pre-configured database: nps_schemes
+#     - User credentials: anjanghosh/MyPassword123
+#     - Exposed on host port 3307 (maps to container port 3306)
+#     - Persistent data storage using named volume 'mysql_data'
+#     - Health check configured to ensure database readiness before dependent services start
+#
+#   flask-app:
+#     - Flask application container built from local Dockerfile
+#     - Container name: flask_schemas_app
+#     - Exposed on host port 5000
+#     - Environment variables configured for MySQL connection and application settings
+#     - Depends on MySQL service health check passing
+#     - Mounts local ./models directory to /app/models for live code updates
+#
+# Volumes:
+#   mysql_data:
+#     - Named volume for persistent MySQL database storage
+#
+# Usage:
+#   Start services: docker-compose up -d
+#   Stop services: docker-compose down
+#   View logs: docker-compose logs -f
+#   Remove with volumes: docker-compose down -v
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: nps_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: nps_schemes
+      MYSQL_USER: anjanghosh
+      MYSQL_PASSWORD: MyPassword123
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  flask-app:
+    build: .
+    container_name: flask_schemas_app
+    ports:
+      - "5000:5000"
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=anjanghosh
+      - MYSQL_PASSWORD=MyPassword123
+      - MYSQL_DB=nps_schemes
+      - SECRET_KEY=your-secret-key-here
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./models:/app/models
+
+volumes:
+  mysql_data:

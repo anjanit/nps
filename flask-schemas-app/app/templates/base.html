@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}NPS Schemes App{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <header>
+        <nav>
+            <h1>NPS Schemes Visualization</h1>
+            <ul class="nav-links">
+                <li><a href="{{ url_for('main.index') }}">Single Scheme</a></li>
+                <li><a href="{{ url_for('main.compare') }}">Compare Schemes</a></li>
+                <li><a href="{{ url_for('main.predict_page') }}">Predictions</a></li>
+                <li><a href="{{ url_for('main.recommend') }}">Investment Recommendations</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    <footer>
+        <p>&copy; 2025 NPS Schemes App</p>
+    </footer>
+</body>
+</html>

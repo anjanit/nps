@@ -1,0 +1,336 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    <h1>NAV Prediction</h1>
+    
+    <div class="scheme-selector">
+        <label for="schemeSelect">Select Scheme:</label>
+        <select id="schemeSelect">
+            <option value="">-- Select a Scheme --</option>
+            {% for scheme in schemes %}
+            <option value="{{ scheme.scheme_code }}">{{ scheme.scheme_code }} - {{ scheme.scheme_name }}</option>
+            {% endfor %}
+        </select>
+        
+        <label for="daysInput" style="margin-top: 15px;">Prediction Days:</label>
+        <input type="number" id="daysInput" value="30" min="1" max="90" style="width: 100%; padding: 10px;">
+        
+        <div style="margin-top: 15px;">
+            <label>
+                <input type="checkbox" id="retrainCheckbox">
+                Retrain Model (slower but more accurate)
+            </label>
+        </div>
+        
+        <button id="predictBtn" class="btn-predict" style="margin-top: 15px;">Generate Prediction</button>
+    </div>
+
+    <div id="metricsContainer" style="display: none; margin-top: 20px; padding: 15px; background: #f0f0f0; border-radius: 5px;">
+        <h3>Model Performance</h3>
+        <div id="metricsContent"></div>
+    </div>
+
+    <div id="chartContainer" style="display: none; margin-top: 20px;">
+        <div style="margin-bottom: 30px;">
+            <h3>Historical NAV</h3>
+            <canvas id="historicalChart"></canvas>
+        </div>
+        <div>
+            <h3>Predicted NAV</h3>
+            <canvas id="predictionChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    let historicalChart = null;
+    let predictionChart = null;
+    const predictBtn = document.getElementById('predictBtn');
+    const schemeSelect = document.getElementById('schemeSelect');
+    const daysInput = document.getElementById('daysInput');
+    const retrainCheckbox = document.getElementById('retrainCheckbox');
+    const chartContainer = document.getElementById('chartContainer');
+    const metricsContainer = document.getElementById('metricsContainer');
+    const metricsContent = document.getElementById('metricsContent');
+    
+    predictBtn.addEventListener('click', async function() {
+        const schemeCode = schemeSelect.value;
+        const days = daysInput.value;
+        const retrain = retrainCheckbox.checked;
+        
+        if (!schemeCode) {
+            alert('Please select a scheme');
+            return;
+        }
+        
+        // Show loading
+        predictBtn.disabled = true;
+        predictBtn.textContent = retrain ? 'Training & Predicting...' : 'Predicting...';
+        
+        try {
+            // First, get historical data
+            const histResponse = await fetch(`/api/scheme/${schemeCode}`);
+            const histData = await histResponse.json();
+            
+            // Then, get predictions
+            const predUrl = `/api/predict/${schemeCode}?days=${days}&retrain=${retrain}`;
+            const predResponse = await fetch(predUrl);
+            const predData = await predResponse.json();
+            
+            if (predData.error) {
+                alert('Error: ' + predData.error);
+                return;
+            }
+            
+            // Show metrics if available
+            if (predData.metrics && Object.keys(predData.metrics).length > 0) {
+                metricsContainer.style.display = 'block';
+                metricsContent.innerHTML = `
+                    <p><strong>Training R² Score:</strong> ${predData.metrics.train_score.toFixed(4)}</p>
+                    <p><strong>Testing R² Score:</strong> ${predData.metrics.test_score.toFixed(4)}</p>
+                    <p><strong>Training RMSE:</strong> ${predData.metrics.train_rmse.toFixed(4)}</p>
+                    <p><strong>Testing RMSE:</strong> ${predData.metrics.test_rmse.toFixed(4)}</p>
+                    <p><strong>Training Size:</strong> ${predData.metrics.train_size} records</p>
+                    <p><strong>Testing Size:</strong> ${predData.metrics.test_size} records</p>
+                `;
+            }
+            
+            // Prepare chart data
+            const historicalDates = histData.dates;
+            const historicalNavs = histData.navs;
+            
+            const predictionDates = predData.predictions.map(p => p.date);
+            const predictionNavs = predData.predictions.map(p => p.predicted_nav);
+            
+            console.log('Prediction dates:', predictionDates);
+            console.log('Prediction NAVs:', predictionNavs);
+            
+            // Sample historical data if too many points (show last 180 days)
+            const maxHistoricalPoints = 180;
+            let sampledHistDates = historicalDates;
+            let sampledHistNavs = historicalNavs;
+            
+            if (historicalDates.length > maxHistoricalPoints) {
+                const startIndex = historicalDates.length - maxHistoricalPoints;
+                sampledHistDates = historicalDates.slice(startIndex);
+                sampledHistNavs = historicalNavs.slice(startIndex);
+            }
+            
+            // Destroy existing charts
+            if (historicalChart) {
+                historicalChart.destroy();
+            }
+            if (predictionChart) {
+                predictionChart.destroy();
+            }
+            
+            // Show chart container
+            chartContainer.style.display = 'block';
+            
+            // Create Historical Chart
+            const histCtx = document.getElementById('historicalChart').getContext('2d');
+            historicalChart = new Chart(histCtx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'Historical NAV',
+                        data: sampledHistDates.map((date, i) => ({
+                            x: date,
+                            y: sampledHistNavs[i]
+                        })),
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderWidth: 2,
+                        fill: true,
+                        pointRadius: 2,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        x: {
+                            type: 'category',
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            },
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45,
+                                autoSkip: true,
+                                maxTicksLimit: 15
+                            }
+                        },
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: 'NAV'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                title: function(context) {
+                                    return 'Date: ' + context[0].label;
+                                },
+                                label: function(context) {
+                                    return 'NAV: ' + context.parsed.y.toFixed(4);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Create Prediction Chart
+            const predCtx = document.getElementById('predictionChart').getContext('2d');
+            predictionChart = new Chart(predCtx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'Predicted NAV',
+                        data: predictionDates.map((date, i) => ({
+                            x: date,
+                            y: predictionNavs[i]
+                        })),
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                        borderWidth: 2,
+                        fill: true,
+                        pointRadius: 3,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        x: {
+                            type: 'category',
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            },
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45,
+                                autoSkip: true,
+                                maxTicksLimit: 15
+                            }
+                        },
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: 'NAV'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                title: function(context) {
+                                    return 'Date: ' + context[0].label;
+                                },
+                                label: function(context) {
+                                    return 'Predicted NAV: ' + context.parsed.y.toFixed(4);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Failed to generate prediction: ' + error.message);
+        } finally {
+            predictBtn.disabled = false;
+            predictBtn.textContent = 'Generate Prediction';
+        }
+    });
+</script>
+
+<style>
+    .scheme-selector {
+        background: #ffffff;
+        padding: 20px;
+        border-radius: 5px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+    }
+    
+    .scheme-selector label {
+        font-weight: bold;
+        display: block;
+        margin-bottom: 10px;
+    }
+    
+    .scheme-selector select {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 16px;
+    }
+    
+    .btn-predict {
+        background-color: #2196F3;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        width: 100%;
+    }
+    
+    .btn-predict:hover {
+        background-color: #0b7dda;
+    }
+    
+    .btn-predict:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
+    }
+    
+    #chartContainer {
+        background: #ffffff;
+        padding: 20px;
+        border-radius: 5px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+    
+    #metricsContainer {
+        background: #e8f5e9;
+        border-left: 4px solid #4CAF50;
+    }
+    
+    #metricsContainer h3 {
+        margin-top: 0;
+        color: #2e7d32;
+    }
+    
+    #metricsContainer p {
+        margin: 8px 0;
+    }
+</style>
+{% endblock %}

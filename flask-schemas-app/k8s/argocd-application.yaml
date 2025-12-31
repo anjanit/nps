@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: flask-schemas-app
+  namespace: argocd
+spec:
+  project: default
+  
+  # Source configuration - your Git repository
+  source:
+    repoURL: https://github.com/anjanit/JOBCHANGE.git
+    targetRevision: HEAD
+    path: nps/flask-schemas-app/k8s
+    
+    # Optional: Directory recursion and specific manifest inclusion
+    directory:
+      recurse: false
+      exclude: 'argocd-application.yaml'
+  
+  # Destination cluster and namespace
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  
+  # Sync policy
+  syncPolicy:
+    automated:
+      prune: true      # Automatically delete resources that are no longer in Git
+      selfHeal: true   # Automatically sync when cluster state differs from Git
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
